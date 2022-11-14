@@ -20,7 +20,7 @@ using namespace std::chrono_literals;
 
 #define MAP_SIZE 1400 // will +1 for making origin
 #define MAP_RESOLUTION 0.05
-#define KP 1.0
+#define KP 0.25
 #define KD 0.4
 #define KI 0.0003
 #define SPEED 0 // -1000 - 1000
@@ -120,6 +120,9 @@ public:
 		worldTbody(1,1) = worldTbody(2,2) = worldTbody(3,3) = worldTbody(0,0);
 		std::cout << "worldTbody: \n" << worldTbody << std::endl;
     }
+    ~PIDPathFollower(){
+        this->publish_motor_cmd(0, 0, 0, 0);
+    }
     void publish_motor_cmd(int pwrL, int pwrR, int posL, int posR){
         auto message = std_msgs::msg::String();
         message.data = "{\"lp\":" + std::to_string(pwrL) +  ", \"rp\":" + std::to_string(pwrR) + ", \"la\":" + std::to_string(posL) +", \"ra\":"+ std::to_string(posR)+ "}";
@@ -132,13 +135,12 @@ public:
         this->cur_boat_global_pos = msg;
         
         std::cout << "received global pos: " <<  this->cur_boat_global_pos.x << " " << this->cur_boat_global_pos.y << " " << this->cur_boat_global_pos.z << std::endl;
-        /*
         Eigen::MatrixXd boat_global_pos_3vec = Eigen::MatrixXd::Zero(3,1);
         boat_global_pos_3vec(0,0) = cur_boat_global_pos.x;
         boat_global_pos_3vec(1,0) = cur_boat_global_pos.y;
         boat_global_pos_3vec(2,0) = cur_boat_global_pos.z;
         this->worldTbody = calc_worldTbody(boat_global_pos_3vec);
-
+        /*
         //std::cout << "worldTbody: " << worldTbody << std::endl;
 
         Eigen::MatrixXd boat_global_pos_4vec = Eigen::MatrixXd::Zero(4,1);
@@ -234,7 +236,9 @@ public:
             if(this->map_path.vec3list.size() != 0){
                 geometry_msgs::msg::Vector3 thePoint = map_path.vec3list[0]; // point in map frame
                 Eigen::MatrixXd convertedGlobalFramePoint = MapToGlobal(thePoint.x, thePoint.y);
+                std::cout << "nearest point in global frame x: " << convertedGlobalFramePoint(0,0) << " , y: " << convertedGlobalFramePoint(1,0) << std::endl;
                 Eigen::MatrixXd convertedBodyFramePoint = calc_T_inv(this->worldTbody)*convertedGlobalFramePoint;
+                std::cout << "nearest point in body frame x: " << convertedBodyFramePoint(0,0) << " , y: " << convertedBodyFramePoint(1,0) << std::endl;
 
                 double cross_track_error = convertedBodyFramePoint(1,0); // pos on left, neg on right
                 double cross_track_error_rate = (cross_track_error - this->pre_cross_track_error)/(0.05);
@@ -253,6 +257,18 @@ public:
                 this->pwrR = SPEED+steering_mag;
                 this->posL = 0;
                 this->posR = 0;
+                if(this->pwrL > 500){
+                    this->pwrL = 500;
+                }
+                if(this->pwrL < -500){
+                    this->pwrL = -500;
+                }
+                if(this->pwrR > 500){
+                    this->pwrR = 500;
+                }
+                if(this->pwrR < -500){
+                    this->pwrR = -500;
+                }
                 this->publish_motor_cmd(this->pwrL, this->pwrR, this->posL, this->posR);
             }
         }

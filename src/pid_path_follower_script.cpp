@@ -21,9 +21,9 @@ using namespace std::chrono_literals;
 #define MAP_SIZE 1400 // will +1 for making origin
 #define MAP_RESOLUTION 0.05
 #define KP 0.25
-#define KD 0.4
+#define KD 0.1
 #define KI 0.0003
-#define SPEED 0 // -1000 - 1000
+#define SPEED 300 // -1000 - 1000
 #define DIFFERENTIAL_MAG 100 // one side + mag other side - msg
 
 double distance(std::pair<double, double>& p1, std::pair<double, double>& p2) {
@@ -243,7 +243,7 @@ public:
                 double cross_track_error = convertedBodyFramePoint(1,0); // pos on left, neg on right
                 double cross_track_error_rate = (cross_track_error - this->pre_cross_track_error)/(0.05);
 
-                double steering_mag = (cross_track_error*KP+0.0*KD)*DIFFERENTIAL_MAG;
+                double steering_mag = (cross_track_error*KP+cross_track_error_rate*KD)*DIFFERENTIAL_MAG;
                 if(cross_track_error < 0){
                     std::cout << "nearest path point on right" << std::endl;
                 }

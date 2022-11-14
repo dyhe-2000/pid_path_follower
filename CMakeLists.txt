@@ -11,6 +11,9 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(ament_cmake_auto REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(eigen3_cmake_module REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(boat_interfaces REQUIRED)
 
 ament_auto_find_build_dependencies(REQUIRED
   ${${PROJECT_NAME}_BUILD_DEPENDS}
@@ -18,7 +21,7 @@ ament_auto_find_build_dependencies(REQUIRED
 )
 
 ament_auto_add_executable(pid_path_follower src/pid_path_follower_script.cpp)
-ament_target_dependencies(pid_path_follower rclcpp std_msgs)
+ament_target_dependencies(pid_path_follower rclcpp std_msgs geometry_msgs Eigen3 boat_interfaces)
 
 install(TARGETS
   pid_path_follower

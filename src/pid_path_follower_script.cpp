@@ -5,6 +5,7 @@
 #include <utility>      // std::pair, std::make_pair
 #include <Eigen/LU>
 #include <Eigen/QR>
+#include <fstream>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -20,11 +21,14 @@ using namespace std::chrono_literals;
 
 #define MAP_SIZE 1800 // will +1 for making origin
 #define MAP_RESOLUTION 0.05
+/*
 #define KP 0.25
 #define KD 0.1
 #define KI 0.0003
-#define SPEED 300 // -1000 - 1000
+#define SPEED 150 // -1000 - 1000
 #define DIFFERENTIAL_MAG 100 // one side + mag other side - msg
+#define MAX_STEERING_MAG 150
+*/
 
 double distance(std::pair<double, double>& p1, std::pair<double, double>& p2) {
     return sqrt(pow((p1.first - p2.first),2) + pow((p1.second - p2.second), 2));
@@ -61,6 +65,18 @@ Eigen::MatrixXd calc_T_inv(Eigen::MatrixXd& T){
     return T_inv;
 }
 
+class LineSegment{
+public:
+    std::pair<double, double> start;
+    std::pair<double, double> end;
+    LineSegment(double start_x=0.0, double start_y=0.0, double end_x=0.0, double end_y=0.0){
+        this->start.first = start_x;
+        this->start.second = start_y;
+        this->end.first = end_x;
+        this->end.second = end_y;
+    }
+};
+
 class PIDPathFollower : public rclcpp::Node{
 private:
     rclcpp::TimerBase::SharedPtr timer_;
@@ -77,6 +93,13 @@ private:
     int posR;
     double pre_cross_track_error;
     double cumulation_cross_track_error;
+    LineSegment curSegmentGlobal;
+
+    double KP;
+    double KD;
+    double KI;
+    int SPEED;
+    int MAX_STEERING_MAG;
 
     Eigen::MatrixXd mapTworld = Eigen::MatrixXd::Zero(4,4);
     Eigen::MatrixXd worldTbody = Eigen::MatrixXd::Zero(4,4);
@@ -119,9 +142,26 @@ public:
 		worldTbody(0,0) = 1;
 		worldTbody(1,1) = worldTbody(2,2) = worldTbody(3,3) = worldTbody(0,0);
 		std::cout << "worldTbody: \n" << worldTbody << std::endl;
+
+        std::fstream myfile("pid_config.txt", std::ios_base::in);
+        double KPa, KDa, KIa, SPEEDa, MAX_STEERING_MAGa;
+        std::string temp;
+        while (myfile >> temp >> KPa >> temp >> KDa >> temp >> KIa >> temp >> SPEEDa >> temp >> MAX_STEERING_MAGa){
+            std::cout << "KP = " << KPa << std::endl;
+            std::cout << "KD = " << KDa << std::endl;
+            std::cout << "KI = " << KIa << std::endl;
+            std::cout << "SPEED = " << SPEEDa << std::endl;
+            std::cout << "MAX_STEERING_MAG = " << MAX_STEERING_MAGa << std::endl;
+        }
+        this->KP = KPa;
+        this->KD = KDa;
+        this->KI = KIa;
+        this->SPEED = SPEEDa;
+        this->MAX_STEERING_MAG = MAX_STEERING_MAGa;
+
     }
     ~PIDPathFollower(){
-        this->publish_motor_cmd(0, 0, 0, 0);
+        //this->publish_motor_cmd(0, 0, 0, 0);
     }
     void publish_motor_cmd(int pwrL, int pwrR, int posL, int posR){
         auto message = std_msgs::msg::String();
@@ -199,6 +239,13 @@ public:
         mtx.lock();
         this->map_path = msg;
         std::cout << "received map path" << std::endl;
+        if(this->map_path.vec3list.size() != 0){
+            this->curSegmentGlobal.start.first = this->cur_boat_global_pos.x;
+            this->curSegmentGlobal.start.second = this->cur_boat_global_pos.y;
+            Eigen::MatrixXd convertedGlobalFramePoint = MapToGlobal(this->map_path.vec3list[0].x, this->map_path.vec3list[0].y);
+            this->curSegmentGlobal.end.first = convertedGlobalFramePoint(0,0);
+            this->curSegmentGlobal.end.second = convertedGlobalFramePoint(1,0);
+        }
         mtx.unlock();
     }
     void step(){
@@ -212,6 +259,7 @@ public:
             this->publish_motor_cmd(this->pwrL, this->pwrR, this->posL, this->posR);
         }
         else{
+            bool deleted = false; // tracking if deteled then make new segment
             // starting from the beginning, delete path point that has reached (in 0.5 meter)
             for(int i = 0; i < this->map_path.vec3list.size(); ++i){
                 geometry_msgs::msg::Vector3 thePoint = map_path.vec3list[i]; // point in map frame
@@ -225,30 +273,74 @@ public:
                 p2.first = 0.0;
                 p2.second = 0.0;
                 if(distance(p1,p2) < 0.5){ // searched from beginning and reached point near so delete
+                    deleted = true;
                     this->map_path.vec3list.erase(this->map_path.vec3list.begin() + i);
                     --i;
                 }
-                else{ // searched from beginning and reached point far
+                else{ // searched from beginning and reached first point far
                     break;
                 }
             }
             // after deleting near points in the beginning portion of the path
             if(this->map_path.vec3list.size() != 0){
+                if(deleted){
+                    this->curSegmentGlobal.start.first = this->cur_boat_global_pos.x;
+                    this->curSegmentGlobal.start.second = this->cur_boat_global_pos.y;
+                    Eigen::MatrixXd convertedGlobalFramePoint = MapToGlobal(this->map_path.vec3list[0].x, this->map_path.vec3list[0].y);
+                    this->curSegmentGlobal.end.first = convertedGlobalFramePoint(0,0);
+                    this->curSegmentGlobal.end.second = convertedGlobalFramePoint(1,0);
+                }
+
                 geometry_msgs::msg::Vector3 thePoint = map_path.vec3list[0]; // point in map frame
                 Eigen::MatrixXd convertedGlobalFramePoint = MapToGlobal(thePoint.x, thePoint.y);
                 std::cout << "nearest point in global frame x: " << convertedGlobalFramePoint(0,0) << " , y: " << convertedGlobalFramePoint(1,0) << std::endl;
                 Eigen::MatrixXd convertedBodyFramePoint = calc_T_inv(this->worldTbody)*convertedGlobalFramePoint;
                 std::cout << "nearest point in body frame x: " << convertedBodyFramePoint(0,0) << " , y: " << convertedBodyFramePoint(1,0) << std::endl;
 
-                double cross_track_error = convertedBodyFramePoint(1,0); // pos on left, neg on right
+                convertedBodyFramePoint(1,0); // pos on left, neg on right
+                double cross_track_error; // norm so it's positive
+                if(this->curSegmentGlobal.start.first == this->cur_boat_global_pos.x && this->curSegmentGlobal.start.second == this->cur_boat_global_pos.y){
+                    cross_track_error = 0.0;
+                }
+                else{
+                    Eigen::MatrixXd z = Eigen::MatrixXd::Zero(2,1);
+                    Eigen::MatrixXd x1 = Eigen::MatrixXd::Zero(2,1);
+                    Eigen::MatrixXd x2 = Eigen::MatrixXd::Zero(2,1);
+                    z(0,0) = this->cur_boat_global_pos.x;
+                    z(1,0) = this->cur_boat_global_pos.y;
+                    x1(0,0) = this->curSegmentGlobal.end.first;
+                    x1(1,0) = this->curSegmentGlobal.end.second;
+                    x2(0,0) = this->curSegmentGlobal.start.first;
+                    x2(1,0) = this->curSegmentGlobal.start.second;
+                    Eigen::MatrixXd zmx2 = z-x2;
+                    Eigen::MatrixXd x1mx2 = x1-x2;
+                    double numerator = zmx2(0,0)*x1mx2(0,0)+zmx2(1,0)*x1mx2(1,0);
+                    double denominator = sqrt(pow(x1mx2(0,0),2) + pow(x1mx2(1,0), 2));
+                    Eigen::MatrixXd y = Eigen::MatrixXd::Zero(2,1);
+                    y(0,0) = numerator/denominator*x1mx2(0,0);
+                    y(1,0) = numerator/denominator*x1mx2(1,0);
+                    cross_track_error = sqrt(pow(y(0,0),2) + pow(y(1,0), 2));
+                }
                 double cross_track_error_rate = (cross_track_error - this->pre_cross_track_error)/(0.05);
 
-                double steering_mag = (cross_track_error*KP+cross_track_error_rate*KD)*DIFFERENTIAL_MAG;
-                if(cross_track_error < 0){
+                double steering_mag = (cross_track_error*KP+cross_track_error_rate*KD);
+                if(convertedBodyFramePoint(1,0) < 0){
                     std::cout << "nearest path point on right" << std::endl;
+                    cross_track_error = -cross_track_error;
+                }
+                else if(convertedBodyFramePoint(1,0) == 0){
+                    std::cout << "on the path" << std::endl;
+                    cross_track_error = 0.0;
                 }
                 else{
                     std::cout << "nearest path point on left" << std::endl;
+                    cross_track_error = cross_track_error;
+                }
+                if(steering_mag < -MAX_STEERING_MAG){
+                    steering_mag = -MAX_STEERING_MAG;
+                }
+                else if(steering_mag > MAX_STEERING_MAG){
+                    steering_mag = MAX_STEERING_MAG;
                 }
 
                 this->pre_cross_track_error = cross_track_error;
@@ -257,18 +349,6 @@ public:
                 this->pwrR = SPEED+steering_mag;
                 this->posL = 0;
                 this->posR = 0;
-                if(this->pwrL > 500){
-                    this->pwrL = 500;
-                }
-                if(this->pwrL < -500){
-                    this->pwrL = -500;
-                }
-                if(this->pwrR > 500){
-                    this->pwrR = 500;
-                }
-                if(this->pwrR < -500){
-                    this->pwrR = -500;
-                }
                 this->publish_motor_cmd(this->pwrL, this->pwrR, this->posL, this->posR);
             }
         }

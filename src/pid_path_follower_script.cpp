@@ -18,7 +18,7 @@ std::mutex mtx;
 
 using namespace std::chrono_literals;
 
-#define MAP_SIZE 1400 // will +1 for making origin
+#define MAP_SIZE 1800 // will +1 for making origin
 #define MAP_RESOLUTION 0.05
 #define KP 0.25
 #define KD 0.1

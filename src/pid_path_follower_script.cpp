@@ -205,7 +205,7 @@ public:
     void publish_motor_cmd(int pwrL, int pwrR, int posL, int posR){
         auto message = std_msgs::msg::String();
         message.data = "{\"lp\":" + std::to_string(pwrL) +  ", \"rp\":" + std::to_string(pwrR) + ", \"la\":" + std::to_string(posL) +", \"ra\":"+ std::to_string(posR)+ "}";
-        RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", message.data.c_str());
+        //RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", message.data.c_str());
 
         this->motor_cmd_publisher_->publish(message);
     }
@@ -213,7 +213,7 @@ public:
         mtx.lock();
         this->cur_boat_global_pos = msg;
         
-        std::cout << "received global pos: " <<  this->cur_boat_global_pos.x << " " << this->cur_boat_global_pos.y << " " << this->cur_boat_global_pos.z << std::endl;
+        //std::cout << "received global pos: " <<  this->cur_boat_global_pos.x << " " << this->cur_boat_global_pos.y << " " << this->cur_boat_global_pos.z << std::endl;
         Eigen::MatrixXd boat_global_pos_3vec = Eigen::MatrixXd::Zero(3,1);
         boat_global_pos_3vec(0,0) = cur_boat_global_pos.x;
         boat_global_pos_3vec(1,0) = cur_boat_global_pos.y;
@@ -249,7 +249,7 @@ public:
         mtx.lock();
         this->cur_boat_map_pos = msg;
         
-        std::cout << "received map pos: " <<  this->cur_boat_map_pos.x << " " << this->cur_boat_map_pos.y << " " << this->cur_boat_map_pos.z << std::endl;
+        //std::cout << "received map pos: " <<  this->cur_boat_map_pos.x << " " << this->cur_boat_map_pos.y << " " << this->cur_boat_map_pos.z << std::endl;
         /*
         Eigen::MatrixXd convertedGlobalFramePos = MapToGlobal(this->cur_boat_map_pos.x, this->cur_boat_map_pos.y);
         std::cout << "convertedGlobalFramePos x: " << convertedGlobalFramePos(0,0) << " , y: " <<  convertedGlobalFramePos(1,0) << std::endl;
@@ -330,14 +330,38 @@ public:
                     this->curSegmentGlobal.end.second = convertedGlobalFramePoint(1,0);
                 }
 
+                std::cout << std::endl;
+                std::cout << "start global x: " << curSegmentGlobal.start.first << " y: " << curSegmentGlobal.start.second << std::endl;
+                std::cout << "finish global x: " << curSegmentGlobal.end.first << " y: " << curSegmentGlobal.end.second << std::endl;
+                Eigen::MatrixXd startGlobal = Eigen::MatrixXd::Zero(4,1);
+                Eigen::MatrixXd endGlobal = Eigen::MatrixXd::Zero(4,1);
+                startGlobal(0,0) = curSegmentGlobal.start.first;
+                startGlobal(1,0) = curSegmentGlobal.start.second;
+                startGlobal(2,0) = 0;
+                startGlobal(3,0) = 1;
+                endGlobal(0,0) = curSegmentGlobal.end.first;
+                endGlobal(1,0) = curSegmentGlobal.end.second;
+                endGlobal(2,0) = 0;
+                endGlobal(3,0) = 1;
+                Eigen::MatrixXd startMap = mapTworld*startGlobal;
+                Eigen::MatrixXd endMap = mapTworld*endGlobal;
+                std::cout << "start map x: " << startMap(0,0) << " y: " << startMap(1,0) << std::endl;
+                std::cout << "finish map x: " << endMap(0,0) << " y: " << endMap(1,0) << std::endl;
+
+                std::cout << "body global x: " << cur_boat_global_pos.x << " y: " << cur_boat_global_pos.y << std::endl;
+                std::cout << "body map x: " << cur_boat_map_pos.x << " y: " << cur_boat_map_pos.y << std::endl;
+
                 geometry_msgs::msg::Vector3 thePoint = map_path.vec3list[0]; // point in map frame
                 Eigen::MatrixXd convertedGlobalFramePoint = MapToGlobal(thePoint.x, thePoint.y);
-                std::cout << "nearest point in global frame x: " << convertedGlobalFramePoint(0,0) << " , y: " << convertedGlobalFramePoint(1,0) << std::endl;
+                std::cout << "end point in global frame x: " << convertedGlobalFramePoint(0,0) << " , y: " << convertedGlobalFramePoint(1,0) << std::endl;
                 Eigen::MatrixXd convertedBodyFramePoint = calc_T_inv(this->worldTbody)*convertedGlobalFramePoint;
-                std::cout << "nearest point in body frame x: " << convertedBodyFramePoint(0,0) << " , y: " << convertedBodyFramePoint(1,0) << std::endl;
+                std::cout << "end point in body frame x: " << convertedBodyFramePoint(0,0) << " , y: " << convertedBodyFramePoint(1,0) << std::endl;
 
                 convertedBodyFramePoint(1,0); // pos on left, neg on right
                 double cross_track_error; // norm so it's positive
+                Eigen::MatrixXd y = Eigen::MatrixXd::Zero(4,1);
+                y(2,0) = 0;
+                y(3,0) = 1;
                 if(this->curSegmentGlobal.start.first == this->cur_boat_global_pos.x && this->curSegmentGlobal.start.second == this->cur_boat_global_pos.y){
                     cross_track_error = 0.0;
                 }
@@ -354,27 +378,34 @@ public:
                     Eigen::MatrixXd zmx2 = z-x2;
                     Eigen::MatrixXd x1mx2 = x1-x2;
                     double numerator = zmx2(0,0)*x1mx2(0,0)+zmx2(1,0)*x1mx2(1,0);
-                    double denominator = sqrt(pow(x1mx2(0,0),2) + pow(x1mx2(1,0), 2));
-                    Eigen::MatrixXd y = Eigen::MatrixXd::Zero(2,1);
-                    y(0,0) = numerator/denominator*x1mx2(0,0);
-                    y(1,0) = numerator/denominator*x1mx2(1,0);
-                    cross_track_error = sqrt(pow((x1mx2(0,0)-y(0,0)),2) + pow((x1mx2(1,0)-y(1,0)), 2));
+                    double denominator = pow(x1mx2(0,0),2) + pow(x1mx2(1,0), 2);
+                    y(0,0) = x1mx2(0,0)*numerator/denominator;
+                    y(1,0) = x1mx2(1,0)*numerator/denominator;
+                    cross_track_error = sqrt(pow((zmx2(0,0)-y(0,0)),2) + pow((zmx2(1,0)-y(1,0)), 2));
                 }
+                y(0,0) = y(0,0)+this->curSegmentGlobal.start.first;
+                y(1,0) = y(1,0)+this->curSegmentGlobal.start.second;
                 double cross_track_error_rate = (cross_track_error - this->pre_cross_track_error)/(0.05);
+                std::cout << "nearest point global x: " << y(0,0) << " y: " << y(1,0) << std::endl;
+                Eigen::MatrixXd convertedBodyFrameNearestPathPoint = calc_T_inv(this->worldTbody)*y;
+                std::cout << "nearest point body x: " << convertedBodyFrameNearestPathPoint(0,0) << " y: " << convertedBodyFrameNearestPathPoint(1,0) << std::endl;
 
-                double steering_mag = (cross_track_error*KP+cross_track_error_rate*KD);
-                if(convertedBodyFramePoint(1,0) < 0){
+                if(convertedBodyFrameNearestPathPoint(1,0) < 0.0){
                     std::cout << "nearest path point on right" << std::endl;
                     cross_track_error = -cross_track_error;
                 }
-                else if(convertedBodyFramePoint(1,0) == 0){
+                else if(convertedBodyFrameNearestPathPoint(1,0) == 0.0){
                     std::cout << "on the path" << std::endl;
                     cross_track_error = 0.0;
                 }
                 else{
                     std::cout << "nearest path point on left" << std::endl;
-                    cross_track_error = cross_track_error;
+                    // cross_track_error = cross_track_error;
                 }
+                std::cout << "cross_track_error: " << cross_track_error << std::endl;
+
+                double steering_mag = (cross_track_error*KP+cross_track_error_rate*KD);
+
                 if(steering_mag < -MAX_STEERING_MAG){
                     steering_mag = -MAX_STEERING_MAG;
                 }

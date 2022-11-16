@@ -205,7 +205,7 @@ public:
     void publish_motor_cmd(int pwrL, int pwrR, int posL, int posR){
         auto message = std_msgs::msg::String();
         message.data = "{\"lp\":" + std::to_string(pwrL) +  ", \"rp\":" + std::to_string(pwrR) + ", \"la\":" + std::to_string(posL) +", \"ra\":"+ std::to_string(posR)+ "}";
-        //RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", message.data.c_str());
+        RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", message.data.c_str());
 
         this->motor_cmd_publisher_->publish(message);
     }

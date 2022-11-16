@@ -30,6 +30,45 @@ using namespace std::chrono_literals;
 #define MAX_STEERING_MAG 150
 */
 
+// <x, y>
+void bresenham2d(std::pair<std::pair<double, double>, std::pair<double, double>> theData, std::vector<std::pair<int, int>> *theVector) {
+	int y1, x1, y2, x2;
+	int dx, dy, sx, sy;
+	int e2;
+	int error;
+
+	x1 = int(round(theData.first.first));
+	y1 = int(round(theData.first.second));
+	x2 = int(round(theData.second.first));
+	y2 = int(round(theData.second.second));
+
+	dx = abs(x1 - x2);
+	dy = -abs(y1 - y2);
+
+	sx = x1 < x2 ? 1 : -1;
+	sy = y1 < y2 ? 1 : -1;
+
+	error = dx + dy;
+
+	while (1) {
+		theVector->push_back(std::pair<int, int>(x1, y1));
+		if (x1 == x2 && y1 == y2)
+			break;
+		e2 = 2 * error;
+
+		if (e2 >= dy) {
+			if (x2 == x1) break;
+			error = error + dy;
+			x1 = x1 + sx;
+		}
+		if (e2 <= dx) {
+			if (y2 == y1) break;
+			error = error + dx;
+			y1 = y1 + sy;
+		}
+	}
+}
+
 double distance(std::pair<double, double>& p1, std::pair<double, double>& p2) {
     return sqrt(pow((p1.first - p2.first),2) + pow((p1.second - p2.second), 2));
 }
@@ -319,7 +358,7 @@ public:
                     Eigen::MatrixXd y = Eigen::MatrixXd::Zero(2,1);
                     y(0,0) = numerator/denominator*x1mx2(0,0);
                     y(1,0) = numerator/denominator*x1mx2(1,0);
-                    cross_track_error = sqrt(pow(y(0,0),2) + pow(y(1,0), 2));
+                    cross_track_error = sqrt(pow((x1mx2(0,0)-y(0,0)),2) + pow((x1mx2(1,0)-y(1,0)), 2));
                 }
                 double cross_track_error_rate = (cross_track_error - this->pre_cross_track_error)/(0.05);
 
